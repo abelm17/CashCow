@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { DataGrid } from "@mui/x-data-grid";
+import AppDataGrid from "../common/AppDataGrid.jsx";
 import {
     Alert,
     Box,
@@ -219,7 +219,7 @@ function AtmDataGrid({ onSuccess }) {
             )}
 
             <Box sx={{ height: 400, width: "100%" }}>
-                <DataGrid
+                <AppDataGrid
                     rows={atms}
                     columns={columns}
                     getRowId={(row) => row.id}

@@ -1,5 +1,6 @@
 import { Button, Stack, Typography } from "@mui/material";
 import { useAuth } from "../../context/AuthContext.jsx";
+import ThemeToggle from "./ThemeToggle.jsx";
 
 const ADMIN = "Operations Admin";
 const TECHNICIAN = "Field Technician";
@@ -16,9 +17,14 @@ function AppHeader({ onNavigate }) {
         <header>
             <Stack
                 direction="row"
-                justifyContent="space-between"
-                alignItems="center"
-                sx={{ p: 2 }}
+                
+                sx={{ 
+                    display: "flex",
+                    justifyContent:"space-between",
+                    alignItems: "center",
+                    p: 1.5,
+                    gap: 1 
+                }}
             >
                 <Typography variant="h4">
                     CashCow
@@ -71,6 +77,9 @@ function AppHeader({ onNavigate }) {
                                 Users
                             </Button>
                         )}
+
+                        {/* Everyone */}
+                        <ThemeToggle />
 
                         {/* Everyone */}
                         <Button

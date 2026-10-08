@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { DataGrid } from "@mui/x-data-grid";
+import AppDataGrid from "../common/AppDataGrid.jsx";
 import {
     Alert,
     Box,
@@ -192,7 +192,7 @@ function AnalyticsDashboard() {
                     </Typography>
 
                     <Box sx={{ height: 400, width: "100%" }}>
-                        <DataGrid
+                        <AppDataGrid
                             rows={lowCash}
                             columns={lowCashColumns}
                             getRowId={(row) => row.atm_id}
@@ -214,7 +214,7 @@ function AnalyticsDashboard() {
                     </Typography>
 
                     <Box sx={{ height: 400, width: "100%" }}>
-                        <DataGrid
+                        <AppDataGrid
                             rows={discrepancies}
                             columns={discrepancyColumns}
                             getRowId={(row) => row.service_call_id}
@@ -236,7 +236,7 @@ function AnalyticsDashboard() {
                     </Typography>
 
                     <Box sx={{ height: 350, width: "100%" }}>
-                        <DataGrid
+                        <AppDataGrid
                             rows={reliability}
                             columns={reliabilityColumns}
                             getRowId={(row) => row.model}
@@ -258,7 +258,7 @@ function AnalyticsDashboard() {
                     </Typography>
 
                     <Box sx={{ height: 350, width: "100%" }}>
-                        <DataGrid
+                        <AppDataGrid
                             rows={maintenance}
                             columns={maintenanceColumns}
                             getRowId={(row) => row.branch_id}
@@ -331,7 +331,7 @@ function AnalyticsDashboard() {
                             </Typography>
 
                             <Box sx={{ height: 350, width: "100%" }}>
-                                <DataGrid
+                                <AppDataGrid
                                     rows={reportingLine.technicians}
                                     columns={technicianColumns}
                                     getRowId={(row) => row.technician_id}

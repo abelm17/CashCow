@@ -3,10 +3,12 @@
 from collections.abc import AsyncGenerator
 
 import jwt
+import asyncio
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.exc import SQLAlchemyError
 
 from app.database import AsyncSessionLocal
 from app.models import User, UserRole
@@ -47,7 +49,17 @@ async def get_current_user(
     except (jwt.InvalidTokenError, ValueError):
         raise credentials_exception
 
-    result = await db.execute(select(User).where(User.id == user_id))
+    try:
+        result = await asyncio.wait_for(
+            db.execute(select(User).where(User.id == user_id)),
+            timeout=2.0,
+        )
+    except (SQLAlchemyError, OSError, TimeoutError):
+        raise HTTPException(
+            status_code= status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Authentication service unavailable",
+        ) from None
+    
     user = result.scalar_one_or_none()
     if user is None:
         raise credentials_exception

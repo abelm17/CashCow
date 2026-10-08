@@ -1,3 +1,5 @@
+import os
+# import boto3
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -15,6 +17,8 @@ from app.schemas.diagnostic_report import (
     DiagnosticReportUpdate,
 )
 
+# s3= boto3.client("s3")
+# BUCKET_NAME= os.environ["S3_BUCKET"]
 
 router = APIRouter(
     prefix="/diagnostic_reports",
