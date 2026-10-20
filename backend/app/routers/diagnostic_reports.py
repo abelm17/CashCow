@@ -1,10 +1,11 @@
+from app.permissions import Permission
 import os
 # import boto3
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
-from app.dependencies import get_db, require_role
+from app.dependencies import get_db, require_permission
 from app.models import (
     DiagnosticReport,
     ServiceCall,
@@ -29,11 +30,7 @@ router = APIRouter(
 @router.get("", response_model=list[DiagnosticReportRead])
 async def list_diagnostic_reports(
     db: AsyncSession = Depends(get_db),
-    current_user=Depends(require_role(
-        UserRole.OPERATIONS_ADMIN,
-        UserRole.AUDITOR,
-        UserRole.FIELD_TECHNICIAN,
-    )),
+    current_user=Depends(require_permission(Permission.REPORT_READ)),
 ) -> list[DiagnosticReport]:
 
     if current_user.role == UserRole.FIELD_TECHNICIAN:
@@ -64,11 +61,7 @@ async def list_diagnostic_reports(
 async def get_diagnostic_report(
     diagnostic_report_id: int,
     db: AsyncSession = Depends(get_db),
-    current_user=Depends(require_role(
-        UserRole.OPERATIONS_ADMIN,
-        UserRole.AUDITOR,
-        UserRole.FIELD_TECHNICIAN,
-    )),
+    current_user=Depends(require_permission(Permission.REPORT_READ)),
 ) -> DiagnosticReport:
 
     if current_user.role == UserRole.FIELD_TECHNICIAN:
@@ -113,10 +106,7 @@ async def get_diagnostic_report(
 async def create_diagnostic_report(
     payload: DiagnosticReportCreate,
     db: AsyncSession = Depends(get_db),
-    current_user=Depends(require_role(
-        UserRole.OPERATIONS_ADMIN,
-        UserRole.FIELD_TECHNICIAN,
-    )),
+    current_user=Depends(require_permission(Permission.REPORT_UPLOAD)),
 ) -> DiagnosticReport:
 
     if current_user.role == UserRole.FIELD_TECHNICIAN:
@@ -164,10 +154,7 @@ async def update_diagnostic_report(
     diagnostic_report_id: int,
     data: DiagnosticReportUpdate,
     db: AsyncSession = Depends(get_db),
-    current_user=Depends(require_role(
-        UserRole.OPERATIONS_ADMIN,
-        UserRole.FIELD_TECHNICIAN,
-    )),
+    current_user=Depends(require_permission(Permission.REPORT_WRITE)),
 ) -> DiagnosticReport:
 
     if current_user.role == UserRole.FIELD_TECHNICIAN:
@@ -219,9 +206,7 @@ async def update_diagnostic_report(
 async def delete_diagnostic_report(
     diagnostic_report_id: int,
     db: AsyncSession = Depends(get_db),
-    current_user=Depends(require_role(
-        UserRole.OPERATIONS_ADMIN
-    )),
+    current_user=Depends(require_permission(Permission.REPORT_DELETE)),
 ):
     statement = select(DiagnosticReport).where(
         DiagnosticReport.id == diagnostic_report_id

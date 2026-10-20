@@ -1,3 +1,4 @@
+from datetime import datetime
 from pydantic import BaseModel, ConfigDict, Field
 from app.models.enums import ServiceCallPriority, ServiceCallStatus
 
@@ -11,6 +12,9 @@ class ServiceCallBase(BaseModel):
 
 class ServiceCallRead(ServiceCallBase):
     id: int
+    is_active: bool
+    deleted_at: datetime | None = None
+    deleted_by: int | None = None
     model_config= ConfigDict(from_attributes= True)
 
 class ServiceCallUpdate(BaseModel):

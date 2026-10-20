@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import RecordHistoryDialog from "../audit/RecordHistoryDialog.jsx";
+import { useEffect, useState, useCallback } from "react";
 import AppDataGrid from "../common/AppDataGrid.jsx";
 import {
     Alert,
@@ -15,10 +16,6 @@ import {
 } from "@mui/material";
 import apiClient from "../../api/client";
 import { useAuth } from "../../context/AuthContext.jsx";
-
-const ADMIN = "Operations Admin";
-const TECHNICIAN = "Field Technician";
-const AUDITOR = "Auditor";
 
 const STATUS_OPTIONS = [
     "Operational",
@@ -45,7 +42,8 @@ const emptyForm = {
 };
 
 function AtmDataGrid({ onSuccess }) {
-    const { user } = useAuth();
+    const { hasPermission } = useAuth();
+    const [historyId, setHistoryId] = useState(null);
 
     const [atms, setAtms] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -59,22 +57,69 @@ function AtmDataGrid({ onSuccess }) {
     const [deleteAtmId, setDeleteAtmId] = useState("");
     const [formValues, setFormValues] = useState(emptyForm);
 
-    const isAdmin = user?.role === ADMIN;
-    const canView = [ADMIN, TECHNICIAN, AUDITOR].includes(user?.role);
+    const [rowCount, setRowCount] = useState(0);
+    const [paginationModel, setPaginationModel] = useState({
+        page: 0,
+        pageSize: 25,
+    });
 
-    async function fetchAtms() {
+    const [sortModel, setSortModel] = useState([
+        { field: "id", sort: "asc" },
+    ]);
+
+    const [statusFilter, setStatusFilter] = useState("");
+    const [branchFilter, setBranchFilter] = useState("");
+    const [searchInput, setSearchInput] = useState("");
+    const [search, setSearch] = useState("");
+
+    const canView = hasPermission("atm:read");
+    const canWrite = hasPermission("atm:write");
+
+    const fetchAtms = useCallback(async () => {
         setLoading(true);
 
         try {
-            const response = await apiClient.get("/atms");
-            setAtms(response.data);
+            const currentSort = sortModel[0] ?? {
+                field: "id",
+                sort: "asc",
+            };
+
+            const params = {
+                page: paginationModel.page + 1,
+                size: paginationModel.pageSize,
+                sort_by: currentSort.field,
+                sort_dir: currentSort.sort ?? "asc",
+            };
+
+            if (statusFilter) {
+                params.status = statusFilter;
+            }
+
+            if (branchFilter !== "") {
+                params.branch_id = Number(branchFilter);
+            }
+
+            if (search) {
+                params.search = search;
+            }
+
+            const response = await apiClient.get("/atms", { params });
+
+            setAtms(response.data.items);
+            setRowCount(response.data.total);
             setError(null);
         } catch {
             setError("Could not load ATM data");
         } finally {
             setLoading(false);
         }
-    }
+    }, [
+        paginationModel,
+        sortModel,
+        statusFilter,
+        branchFilter,
+        search,
+    ]);
 
     useEffect(() => {
         if (canView) {
@@ -82,7 +127,19 @@ function AtmDataGrid({ onSuccess }) {
         } else {
             setLoading(false);
         }
-    }, [canView]);
+    }, [canView, fetchAtms]);
+
+    useEffect(() => {
+        const timer = setTimeout(() => {
+            setSearch(searchInput.trim());
+            setPaginationModel((previous) => ({
+                ...previous,
+                page: 0,
+            }));
+        }, 350);
+
+        return () => clearTimeout(timer);
+    }, [searchInput]);
 
     const handleFieldChange = (field) => (event) => {
         setFormValues((previous) => ({
@@ -173,9 +230,6 @@ function AtmDataGrid({ onSuccess }) {
         );
     }
 
-    if (loading) {
-        return <CircularProgress />;
-    }
 
     return (
         <Box>
@@ -189,7 +243,7 @@ function AtmDataGrid({ onSuccess }) {
                 </Alert>
             )}
 
-            {isAdmin && (
+            {canWrite && (
                 <>
                     <Button
                         variant="outlined"
@@ -218,11 +272,99 @@ function AtmDataGrid({ onSuccess }) {
                 </>
             )}
 
+            <Stack
+                direction={{ xs: "column", sm: "row" }}
+                spacing={2}
+                sx={{ mb: 2 }}
+            >
+                <TextField
+                    label="Search model or serial number"
+                    value={searchInput}
+                    onChange={(event) => setSearchInput(event.target.value)}
+                    size="small"
+                />
+
+                <TextField
+                    select
+                    label="Status"
+                    value={statusFilter}
+                    onChange={(event) => {
+                        setStatusFilter(event.target.value);
+                        setPaginationModel((previous) => ({
+                            ...previous,
+                            page: 0,
+                        }));
+                    }}
+                    size="small"
+                >
+                    <MenuItem value="">All statuses</MenuItem>
+                    {STATUS_OPTIONS.map((option) => (
+                        <MenuItem key={option} value={option}>
+                            {option}
+                        </MenuItem>
+                    ))}
+                </TextField>
+
+                <TextField
+                    label="Branch ID"
+                    type="number"
+                    value={branchFilter}
+                    onChange={(event) => {
+                        setBranchFilter(event.target.value);
+                        setPaginationModel((previous) => ({
+                            ...previous,
+                            page: 0,
+                        }));
+                    }}
+                    size="small"
+                />
+            </Stack>
+
             <Box sx={{ height: 400, width: "100%" }}>
+                {loading && (
+                <Box
+                    sx={{
+                        display: "flex",
+                        justifyContent: "center",
+                        py: 1,
+                    }}
+                >
+                    <CircularProgress size={28} />
+                </Box>
+                )}
                 <AppDataGrid
                     rows={atms}
-                    columns={columns}
+                    columns={[...columns, {
+                        field: "historyAction", headerName: "History", width: 125, sortable: false, filterable: false,
+                        renderCell: (params) => <Button size="small" onClick={() => setHistoryId(params.row.id)}>History</Button>,
+                    }]}
                     getRowId={(row) => row.id}
+
+                    // loading={loading}
+                    rowCount={rowCount}
+
+                    pagination
+                    paginationMode="server"
+                    paginationModel={paginationModel}
+                    onPaginationModelChange={setPaginationModel}
+                    pageSizeOptions={[10, 25, 50, 100]}
+
+                    sortingMode="server"
+                    sortModel={sortModel}
+                    onSortModelChange={(newModel) => {
+                        setSortModel(
+                            newModel.length > 0
+                                ? newModel
+                                : [{ field: "id", sort: "asc" }]
+                        );
+
+                        setPaginationModel((previous) => ({
+                            ...previous,
+                            page: 0,
+                        }));
+                    }}
+
+                    filterMode="server"
                 />
             </Box>
 
@@ -397,6 +539,7 @@ function AtmDataGrid({ onSuccess }) {
                     </Button>
                 </DialogActions>
             </Dialog>
+            <RecordHistoryDialog type="atm" recordId={historyId} onClose={() => setHistoryId(null)} />
         </Box>
     );
 }

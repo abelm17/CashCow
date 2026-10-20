@@ -1,5 +1,5 @@
 from fastapi import FastAPI
-from app.routers import atms, auth, branches, diagnostic_reports, service_calls, users
+from app.routers import atms, auth, branches, diagnostic_reports, service_calls, users, roles
 from app.routers.analytics import router as analytics_router
 from app.routers.health import router as health_router
 from fastapi.middleware.cors import CORSMiddleware

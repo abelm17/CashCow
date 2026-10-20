@@ -11,8 +11,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.database import AsyncSessionLocal
-from app.models import User, UserRole
+from app.models import User, UserRole, Role
 from app.security import decode_access_token
+from app.permissions import Permission
 
 
 async def get_db() -> AsyncGenerator[AsyncSession, None]:
@@ -82,3 +83,39 @@ def require_role(*allowed_roles: UserRole):
         return current_user
 
     return role_checker
+
+
+def require_permission(permission: Permission):
+
+    async def permission_checker(
+        current_user: User = Depends(get_current_user),
+        db: AsyncSession = Depends(get_db),
+    ) -> User:
+
+        result = await db.execute(
+            select(Role).where(
+                Role.name == current_user.role.value
+            )
+        )
+
+        role = result.scalar_one_or_none()
+
+        if role is None:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Missing permission: {permission.value}",
+            )
+
+        granted_permissions = {
+            item.name for item in role.permissions
+        }
+
+        if permission.value not in granted_permissions:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Missing permission: {permission.value}",
+            )
+
+        return current_user
+
+    return permission_checker

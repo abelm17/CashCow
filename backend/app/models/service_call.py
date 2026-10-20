@@ -1,8 +1,9 @@
 from __future__ import annotations
 from typing import TYPE_CHECKING
+from datetime import datetime, timezone
 from .base import Base
 from .enums import ServiceCallPriority, ServiceCallStatus
-from sqlalchemy import Integer, String, ForeignKey, Enum as SqlEnum
+from sqlalchemy import Boolean, DateTime, Integer, String, ForeignKey, Enum as SqlEnum
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 if TYPE_CHECKING:
@@ -13,6 +14,10 @@ class ServiceCall(Base):
     __tablename__= "service_calls"
 
     id: Mapped[int]= mapped_column(primary_key= True)
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default="true")
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    deleted_by: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+
     title: Mapped[str]= mapped_column(String(75))
     priority: Mapped["ServiceCallPriority"]= mapped_column(
         SqlEnum(

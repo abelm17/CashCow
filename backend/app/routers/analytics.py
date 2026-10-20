@@ -1,8 +1,9 @@
+from app.permissions import Permission
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select, func, case
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.dependencies import get_db, require_role
+from app.dependencies import get_db, require_permission
 from app.models import (
     Atm, Branch, ServiceCall, Technician, User, UserRole,
     AtmStatus, ServiceCallStatus,
@@ -18,7 +19,7 @@ LOW_CASH_THRESHOLD = ATM_MAX_CASH * 0.20
 router = APIRouter(
     prefix="/analytics",
     tags=["Analytics"],
-    dependencies=[Depends(require_role(UserRole.OPERATIONS_ADMIN, UserRole.AUDITOR))],
+    dependencies=[Depends(require_permission(Permission.ANALYTICS_READ))],
 )
 
 
@@ -35,6 +36,7 @@ async def low_cash_alert(db: AsyncSession = Depends(get_db)):
         )
         .join(Branch, Branch.id == Atm.branch_id)
         .where(
+            Atm.is_active.is_(True),
             Atm.status == AtmStatus.OPERATIONAL,
             Atm.cash_level < LOW_CASH_THRESHOLD,
         )
@@ -61,7 +63,7 @@ async def co_location_discrepancy(db: AsyncSession = Depends(get_db)):
         )
         .join(Atm, Atm.id == ServiceCall.atm_id)
         .join(Technician, Technician.id == ServiceCall.technician_id)
-        .where(Atm.branch_id != Technician.branch_id)
+        .where(Atm.branch_id != Technician.branch_id, Atm.is_active.is_(True), ServiceCall.is_active.is_(True))
         .order_by(ServiceCall.id)
     )
 
@@ -70,14 +72,9 @@ async def co_location_discrepancy(db: AsyncSession = Depends(get_db)):
     return [CoLocationDiscrepancy(**row._mapping) for row in result]
 
 
-# ---------------------------------------------------------
-# 3. RELIABILITY METRICS
-# ---------------------------------------------------------
-
 @router.get("/reliability", response_model=list[ReliabilityMetric])
 async def reliability_metrics(
     db: AsyncSession = Depends(get_db),
-    _: User = Depends(require_role(UserRole.OPERATIONS_ADMIN, UserRole.AUDITOR))
 ):
     statement = (
         select(
@@ -97,6 +94,7 @@ async def reliability_metrics(
             ).label("failed_count"),
         )
         .join(ServiceCall, ServiceCall.atm_id == Atm.id)
+        .where(Atm.is_active.is_(True), ServiceCall.is_active.is_(True))
         .group_by(Atm.model)
         .order_by(Atm.model)
     )
@@ -122,13 +120,9 @@ async def reliability_metrics(
 
     return metrics
 
-
-
-
 @router.get("/maintenance-flags", response_model=list[MaintenanceFlag])
 async def maintenance_flags(
     db: AsyncSession = Depends(get_db),
-    _: User= Depends(require_role(UserRole.OPERATIONS_ADMIN, UserRole.AUDITOR))
 ):
     statement = (
         select(
@@ -143,6 +137,7 @@ async def maintenance_flags(
             ).label("maintenance_count"),
         )
         .join(Atm, Atm.branch_id == Branch.id)
+        .where(Atm.is_active.is_(True))
         .group_by(Branch.id, Branch.name)
     )
 
@@ -222,6 +217,7 @@ async def reporting_lines(supervisor_id: int, db: AsyncSession = Depends(get_db)
         .join(Branch, Branch.id == Technician.branch_id)
         .where(
             Branch.supervisor_id == supervisor_id,
+            ServiceCall.is_active.is_(True),
             ServiceCall.status.in_([
                 ServiceCallStatus.PENDING,
                 ServiceCallStatus.IN_PROGRESS,

@@ -1,10 +1,11 @@
 from __future__ import annotations
 from typing import TYPE_CHECKING
+from datetime import datetime, timezone
 from .base import Base
 from .enums import AtmStatus
 from decimal import Decimal
 
-from sqlalchemy import String, Integer, ForeignKey, Enum as SqlEnum
+from sqlalchemy import Boolean, DateTime, String, Integer, ForeignKey, Enum as SqlEnum
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 if TYPE_CHECKING:
@@ -15,6 +16,10 @@ class Atm(Base):
     __tablename__= "atms"
 
     id: Mapped[int]= mapped_column(primary_key= True)
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default="true")
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    deleted_by: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+
     serial_number: Mapped[str]= mapped_column(String(50), unique= True)
     model: Mapped[str]= mapped_column(String(20))
     status: Mapped["AtmStatus"]= mapped_column(

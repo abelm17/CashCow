@@ -2,16 +2,9 @@ import { Button, Stack, Typography } from "@mui/material";
 import { useAuth } from "../../context/AuthContext.jsx";
 import ThemeToggle from "./ThemeToggle.jsx";
 
-const ADMIN = "Operations Admin";
-const TECHNICIAN = "Field Technician";
-const AUDITOR = "Auditor";
-
 function AppHeader({ onNavigate }) {
-    const { user, logout } = useAuth();
+    const { user, logout, hasPermission } = useAuth();
 
-    const isAdmin = user?.role === ADMIN;
-    const isTechnician = user?.role === TECHNICIAN;
-    const isAuditor = user?.role === AUDITOR;
 
     return (
         <header>
@@ -39,43 +32,47 @@ function AppHeader({ onNavigate }) {
                         </Button>
 
                         {/* Admin + Auditor */}
-                        {(isAdmin || isAuditor) && (
+                        {hasPermission("analytics:read") && (
                             <Button onClick={() => onNavigate("analytics")}>
                                 Analytics
                             </Button>
                         )}
 
                         {/* Everyone */}
-                        <Button onClick={() => onNavigate("atms")}>
+                        {hasPermission("atm:read") && <Button onClick={() => onNavigate("atms")}>
                             ATMs
-                        </Button>
+                        </Button>}
 
                         {/* Admin + Auditor */}
-                        {(isAdmin || isAuditor) && (
+                        {hasPermission("branch:read") && (
                             <Button onClick={() => onNavigate("branches")}>
                                 Branches
                             </Button>
                         )}
 
                         {/* Everyone */}
-                        <Button onClick={() => onNavigate("service-calls")}>
+                        {hasPermission("service_call:read") && <Button onClick={() => onNavigate("service-calls")}>
                             Service Calls
-                        </Button>
+                        </Button>}
 
                         {/* Everyone */}
-                        <Button
+                        {hasPermission("report:read") && <Button
                             onClick={() =>
                                 onNavigate("diagnostic-reports")
                             }
                         >
                             Diagnostic Reports
-                        </Button>
+                        </Button>}
 
                         {/* Admin only */}
-                        {isAdmin && (
+                        {hasPermission("user:manage") && (
                             <Button onClick={() => onNavigate("users")}>
                                 Users
                             </Button>
+                        )}
+
+                        {hasPermission("user:manage") && (
+                            <Button onClick={() => onNavigate("inactive-records")}>Inactive Records</Button>
                         )}
 
                         {/* Everyone */}

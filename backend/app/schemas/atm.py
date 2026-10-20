@@ -1,5 +1,4 @@
-
-
+from datetime import datetime
 from pydantic import BaseModel, Field, ConfigDict
 from app.models import AtmStatus
 
@@ -13,10 +12,12 @@ class AtmCreate(BaseModel):
 
 class AtmRead(AtmCreate):
     id: int
+    is_active: bool
+    deleted_at: datetime | None = None
+    deleted_by: int | None = None
     model_config = ConfigDict(from_attributes=True)
 
 class AtmUpdate(BaseModel):
     status: AtmStatus | None = None
     cash_level: int | None = Field(default=None, ge=0)
     branch_id: int | None = None
-

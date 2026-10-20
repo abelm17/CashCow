@@ -34,6 +34,7 @@ function AppDataGrid({
             <DataGrid
                 {...gridProps}
                 columns={equalColumns}
+                sortingMode={gridProps.sortingMode ?? "client"}
             />
         </Box>
     );

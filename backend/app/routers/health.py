@@ -1,4 +1,5 @@
 """Database readiness and admin-only dependency diagnostics."""
+from app.permissions import Permission
 
 import asyncio
 
@@ -7,8 +8,7 @@ from fastapi.responses import JSONResponse
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.dependencies import get_db, require_role
-from app.models import UserRole
+from app.dependencies import get_db, require_permission
 from app.storage import get_s3_bucket, get_s3_client
 
 router = APIRouter(prefix="/health", tags=["health"])
@@ -60,7 +60,7 @@ async def readiness(db: AsyncSession = Depends(get_db)):
 
 @router.get("/detail")
 async def health_detail(
-    current_user=Depends(require_role(UserRole.OPERATIONS_ADMIN)),
+    current_user=Depends(require_permission(Permission.HEALTH_DETAIL)),
     db: AsyncSession = Depends(get_db),
 ):
     database, s3 = await asyncio.gather(check_database(db), check_s3())

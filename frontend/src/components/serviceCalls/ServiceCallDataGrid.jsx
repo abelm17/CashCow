@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import RecordHistoryDialog from "../audit/RecordHistoryDialog.jsx";
+import { useEffect, useState, useCallback } from "react";
 import AppDataGrid from "../common/AppDataGrid.jsx";
 import {
     Alert,
@@ -16,10 +17,6 @@ import {
 import apiClient from "../../api/client";
 import { useAuth } from "../../context/AuthContext.jsx";
 
-const ADMIN = "Operations Admin";
-const TECHNICIAN = "Field Technician";
-const AUDITOR = "Auditor";
-
 const STATUS_OPTIONS = [
     "Pending",
     "In-Progress",
@@ -34,17 +31,12 @@ const PRIORITY_OPTIONS = [
 ];
 
 const columns = [
-    { field: "id", headerName: "ID", width: 70 },
-    { field: "title", headerName: "Title", width: 240 },
-    { field: "priority", headerName: "Priority", width: 120 },
-    { field: "status", headerName: "Status", width: 130 },
-    { field: "atm_id", headerName: "ATM ID", width: 90, type: "number" },
-    {
-        field: "technician_id",
-        headerName: "Technician ID",
-        width: 130,
-        type: "number",
-    },
+    { field: "id", headerName: "ID" },
+    { field: "title", headerName: "Title" },
+    { field: "priority", headerName: "Priority" },
+    { field: "status", headerName: "Status" },
+    { field: "atm_id", headerName: "ATM ID", type: "number" },
+    { field: "technician_id", headerName: "Technician ID", type: "number" },
 ];
 
 const emptyForm = {
@@ -56,17 +48,33 @@ const emptyForm = {
 };
 
 function ServiceCallDataGrid({ onSuccess }) {
-    const { user } = useAuth();
+    const { hasPermission } = useAuth();
+    const [historyId, setHistoryId] = useState(null);
 
-    const isAdmin = user?.role === ADMIN;
-    const isTechnician = user?.role === TECHNICIAN;
-    const isAuditor = user?.role === AUDITOR;
-
-    const canView = isAdmin || isTechnician || isAuditor;
+    const canView = hasPermission("service_call:read");
+    const canWrite = hasPermission("service_call:write");
+    const canChangeStatus = hasPermission("service_call:status");
 
     const [serviceCalls, setServiceCalls] = useState([]);
+    const [rowCount, setRowCount] = useState(0);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
+
+    const [paginationModel, setPaginationModel] = useState({
+        page: 0,
+        pageSize: 25,
+    });
+
+    const [sortModel, setSortModel] = useState([
+        { field: "id", sort: "asc" },
+    ]);
+
+    const [statusFilter, setStatusFilter] = useState("");
+    const [priorityFilter, setPriorityFilter] = useState("");
+    const [atmFilter, setAtmFilter] = useState("");
+    const [technicianFilter, setTechnicianFilter] = useState("");
+    const [searchInput, setSearchInput] = useState("");
+    const [search, setSearch] = useState("");
 
     const [dialogOpen, setDialogOpen] = useState(false);
     const [updateDialogOpen, setUpdateDialogOpen] = useState(false);
@@ -80,13 +88,48 @@ function ServiceCallDataGrid({ onSuccess }) {
     const [formValues, setFormValues] = useState(emptyForm);
     const [newStatus, setNewStatus] = useState("Pending");
 
-    async function fetchServiceCalls() {
+    const fetchServiceCalls = useCallback(async () => {
         setLoading(true);
 
         try {
-            const response = await apiClient.get("/service_calls");
+            const currentSort = sortModel[0] ?? {
+                field: "id",
+                sort: "asc",
+            };
 
-            setServiceCalls(response.data);
+            const params = {
+                page: paginationModel.page + 1,
+                size: paginationModel.pageSize,
+                sort_by: currentSort.field,
+                sort_dir: currentSort.sort ?? "asc",
+            };
+
+            if (statusFilter) {
+                params.status = statusFilter;
+            }
+
+            if (priorityFilter) {
+                params.priority = priorityFilter;
+            }
+
+            if (atmFilter !== "") {
+                params.atm_id = Number(atmFilter);
+            }
+
+            if (technicianFilter !== "") {
+                params.technician_id = Number(technicianFilter);
+            }
+
+            if (search) {
+                params.search = search;
+            }
+
+            const response = await apiClient.get("/service_calls", {
+                params,
+            });
+
+            setServiceCalls(response.data.items);
+            setRowCount(response.data.total);
             setError(null);
         } catch (error) {
             console.error("Could not load service calls:", error);
@@ -94,7 +137,15 @@ function ServiceCallDataGrid({ onSuccess }) {
         } finally {
             setLoading(false);
         }
-    }
+    }, [
+        paginationModel,
+        sortModel,
+        statusFilter,
+        priorityFilter,
+        atmFilter,
+        technicianFilter,
+        search,
+    ]);
 
     useEffect(() => {
         if (canView) {
@@ -102,17 +153,36 @@ function ServiceCallDataGrid({ onSuccess }) {
         } else {
             setLoading(false);
         }
-    }, [canView]);
+    }, [canView, fetchServiceCalls]);
+
+    useEffect(() => {
+        const timer = setTimeout(() => {
+            setSearch(searchInput.trim());
+            setPaginationModel((previous) => ({
+                ...previous,
+                page: 0,
+            }));
+        }, 350);
+
+        return () => clearTimeout(timer);
+    }, [searchInput]);
 
     const handleFieldChange = (field) => (event) => {
-        setFormValues((prev) => ({
-            ...prev,
+        setFormValues((previous) => ({
+            ...previous,
             [field]: event.target.value,
         }));
     };
 
     const resetForm = () => {
         setFormValues(emptyForm);
+    };
+
+    const resetPage = () => {
+        setPaginationModel((previous) => ({
+            ...previous,
+            page: 0,
+        }));
     };
 
     const handleCreate = async () => {
@@ -125,6 +195,7 @@ function ServiceCallDataGrid({ onSuccess }) {
 
             setDialogOpen(false);
             resetForm();
+            resetPage();
 
             onSuccess?.("Service call created.");
 
@@ -159,16 +230,14 @@ function ServiceCallDataGrid({ onSuccess }) {
                 data.technician_id = Number(formValues.technician_id);
             }
 
-            await apiClient.patch(
-                `/service_calls/${updateId}`,
-                data
-            );
+            await apiClient.patch(`/service_calls/${updateId}`, data);
 
             const id = updateId;
 
             setUpdateDialogOpen(false);
             setUpdateId("");
             resetForm();
+            resetPage();
 
             onSuccess?.(`Service call ${id} updated.`);
 
@@ -181,18 +250,16 @@ function ServiceCallDataGrid({ onSuccess }) {
 
     const handleStatusUpdate = async () => {
         try {
-            await apiClient.patch(
-                `/service_calls/${statusId}/status`,
-                {
-                    status: newStatus,
-                }
-            );
+            await apiClient.patch(`/service_calls/${statusId}/status`, {
+                status: newStatus,
+            });
 
             const id = statusId;
 
             setStatusDialogOpen(false);
             setStatusId("");
             setNewStatus("Pending");
+            resetPage();
 
             onSuccess?.(`Service call ${id} status updated.`);
 
@@ -211,6 +278,7 @@ function ServiceCallDataGrid({ onSuccess }) {
 
             setDeleteDialogOpen(false);
             setDeleteId("");
+            resetPage();
 
             onSuccess?.(`Service call ${id} deleted.`);
 
@@ -222,11 +290,26 @@ function ServiceCallDataGrid({ onSuccess }) {
     };
 
     if (!canView) {
-        return null;
+        return (
+            <Alert severity="error">
+                You do not have permission to view service calls.
+            </Alert>
+        );
     }
 
-    if (loading) {
-        return <CircularProgress />;
+    if (loading && serviceCalls.length === 0) {
+        return (
+            <Box
+                sx={{
+                    display: "flex",
+                    justifyContent: "center",
+                    alignItems: "center",
+                    minHeight: 200,
+                }}
+            >
+                <CircularProgress />
+            </Box>
+        );
     }
 
     return (
@@ -241,7 +324,7 @@ function ServiceCallDataGrid({ onSuccess }) {
                 </Alert>
             )}
 
-            {isAdmin && (
+            {canWrite && (
                 <>
                     <Button
                         variant="outlined"
@@ -270,7 +353,7 @@ function ServiceCallDataGrid({ onSuccess }) {
                 </>
             )}
 
-            {isTechnician && (
+            {canChangeStatus && (
                 <Button
                     variant="outlined"
                     sx={{ mb: 2 }}
@@ -280,21 +363,109 @@ function ServiceCallDataGrid({ onSuccess }) {
                 </Button>
             )}
 
+            <Stack
+                direction={{ xs: "column", sm: "row" }}
+                spacing={2}
+                sx={{ mb: 2 }}
+            >
+                <TextField
+                    label="Search title"
+                    value={searchInput}
+                    onChange={(event) => setSearchInput(event.target.value)}
+                    size="small"
+                />
+
+                <TextField
+                    select
+                    label="Status"
+                    value={statusFilter}
+                    onChange={(event) => {
+                        setStatusFilter(event.target.value);
+                        resetPage();
+                    }}
+                    size="small"
+                >
+                    <MenuItem value="">All statuses</MenuItem>
+                    {STATUS_OPTIONS.map((option) => (
+                        <MenuItem key={option} value={option}>
+                            {option}
+                        </MenuItem>
+                    ))}
+                </TextField>
+
+                <TextField
+                    select
+                    label="Priority"
+                    value={priorityFilter}
+                    onChange={(event) => {
+                        setPriorityFilter(event.target.value);
+                        resetPage();
+                    }}
+                    size="small"
+                >
+                    <MenuItem value="">All priorities</MenuItem>
+                    {PRIORITY_OPTIONS.map((option) => (
+                        <MenuItem key={option} value={option}>
+                            {option}
+                        </MenuItem>
+                    ))}
+                </TextField>
+
+                <TextField
+                    label="ATM ID"
+                    type="number"
+                    value={atmFilter}
+                    onChange={(event) => {
+                        setAtmFilter(event.target.value);
+                        resetPage();
+                    }}
+                    size="small"
+                />
+
+                <TextField
+                    label="Technician ID"
+                    type="number"
+                    value={technicianFilter}
+                    onChange={(event) => {
+                        setTechnicianFilter(event.target.value);
+                        resetPage();
+                    }}
+                    size="small"
+                />
+            </Stack>
+
             <Box sx={{ height: 450, width: "100%" }}>
                 <AppDataGrid
                     rows={serviceCalls}
-                    columns={columns}
+                    columns={[...columns, {
+                        field: "historyAction", headerName: "History", width: 125, sortable: false, filterable: false,
+                        renderCell: (params) => <Button size="small" onClick={() => setHistoryId(params.row.id)}>History</Button>,
+                    }]}
                     getRowId={(row) => row.id}
+                    loading={loading}
+                    rowCount={rowCount}
+                    pagination
+                    paginationMode="server"
+                    paginationModel={paginationModel}
+                    onPaginationModelChange={setPaginationModel}
+                    pageSizeOptions={[10, 25, 50, 100]}
+                    sortingMode="server"
+                    sortModel={sortModel}
+                    onSortModelChange={(newModel) => {
+                        setSortModel(
+                            newModel.length > 0
+                                ? newModel
+                                : [{ field: "id", sort: "asc" }]
+                        );
+                        resetPage();
+                    }}
+                    filterMode="server"
                 />
             </Box>
 
-            {/* ADMIN CREATE */}
-            <Dialog
-                open={dialogOpen}
-                onClose={() => setDialogOpen(false)}
-            >
+            {/* CREATE */}
+            <Dialog open={dialogOpen} onClose={() => setDialogOpen(false)}>
                 <DialogTitle>Add Service Call</DialogTitle>
-
                 <DialogContent>
                     <Stack spacing={2} sx={{ mt: 1, minWidth: 300 }}>
                         <TextField
@@ -344,16 +515,9 @@ function ServiceCallDataGrid({ onSuccess }) {
                         />
                     </Stack>
                 </DialogContent>
-
                 <DialogActions>
-                    <Button onClick={() => setDialogOpen(false)}>
-                        Cancel
-                    </Button>
-
-                    <Button
-                        variant="contained"
-                        onClick={handleCreate}
-                    >
+                    <Button onClick={() => setDialogOpen(false)}>Cancel</Button>
+                    <Button variant="contained" onClick={handleCreate}>
                         Create
                     </Button>
                 </DialogActions>
@@ -365,16 +529,13 @@ function ServiceCallDataGrid({ onSuccess }) {
                 onClose={() => setUpdateDialogOpen(false)}
             >
                 <DialogTitle>Update Service Call</DialogTitle>
-
                 <DialogContent>
                     <Stack spacing={2} sx={{ mt: 1, minWidth: 300 }}>
                         <TextField
                             label="Service Call ID"
                             type="number"
                             value={updateId}
-                            onChange={(event) =>
-                                setUpdateId(event.target.value)
-                            }
+                            onChange={(event) => setUpdateId(event.target.value)}
                         />
 
                         <TextField
@@ -424,12 +585,10 @@ function ServiceCallDataGrid({ onSuccess }) {
                         />
                     </Stack>
                 </DialogContent>
-
                 <DialogActions>
                     <Button onClick={() => setUpdateDialogOpen(false)}>
                         Cancel
                     </Button>
-
                     <Button
                         variant="contained"
                         disabled={!updateId}
@@ -440,33 +599,26 @@ function ServiceCallDataGrid({ onSuccess }) {
                 </DialogActions>
             </Dialog>
 
-            {/* TECHNICIAN STATUS */}
+            {/* TECHNICIAN STATUS UPDATE */}
             <Dialog
                 open={statusDialogOpen}
                 onClose={() => setStatusDialogOpen(false)}
             >
-                <DialogTitle>
-                    Update Service Call Status
-                </DialogTitle>
-
+                <DialogTitle>Update Service Call Status</DialogTitle>
                 <DialogContent>
                     <Stack spacing={2} sx={{ mt: 1, minWidth: 300 }}>
                         <TextField
                             label="Service Call ID"
                             type="number"
                             value={statusId}
-                            onChange={(event) =>
-                                setStatusId(event.target.value)
-                            }
+                            onChange={(event) => setStatusId(event.target.value)}
                         />
 
                         <TextField
                             select
                             label="Status"
                             value={newStatus}
-                            onChange={(event) =>
-                                setNewStatus(event.target.value)
-                            }
+                            onChange={(event) => setNewStatus(event.target.value)}
                         >
                             {STATUS_OPTIONS.map((option) => (
                                 <MenuItem key={option} value={option}>
@@ -476,14 +628,10 @@ function ServiceCallDataGrid({ onSuccess }) {
                         </TextField>
                     </Stack>
                 </DialogContent>
-
                 <DialogActions>
-                    <Button
-                        onClick={() => setStatusDialogOpen(false)}
-                    >
+                    <Button onClick={() => setStatusDialogOpen(false)}>
                         Cancel
                     </Button>
-
                     <Button
                         variant="contained"
                         disabled={!statusId}
@@ -494,13 +642,12 @@ function ServiceCallDataGrid({ onSuccess }) {
                 </DialogActions>
             </Dialog>
 
-            {/* ADMIN DELETE */}
+            {/* DELETE */}
             <Dialog
                 open={deleteDialogOpen}
                 onClose={() => setDeleteDialogOpen(false)}
             >
                 <DialogTitle>Delete Service Call</DialogTitle>
-
                 <DialogContent>
                     <TextField
                         autoFocus
@@ -509,19 +656,13 @@ function ServiceCallDataGrid({ onSuccess }) {
                         type="number"
                         fullWidth
                         value={deleteId}
-                        onChange={(event) =>
-                            setDeleteId(event.target.value)
-                        }
+                        onChange={(event) => setDeleteId(event.target.value)}
                     />
                 </DialogContent>
-
                 <DialogActions>
-                    <Button
-                        onClick={() => setDeleteDialogOpen(false)}
-                    >
+                    <Button onClick={() => setDeleteDialogOpen(false)}>
                         Cancel
                     </Button>
-
                     <Button
                         variant="contained"
                         color="error"
@@ -532,6 +673,7 @@ function ServiceCallDataGrid({ onSuccess }) {
                     </Button>
                 </DialogActions>
             </Dialog>
+            <RecordHistoryDialog type="service_call" recordId={historyId} onClose={() => setHistoryId(null)} />
         </Box>
     );
 }

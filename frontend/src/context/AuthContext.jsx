@@ -1,97 +1,112 @@
-import { createContext, useContext, useEffect, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useState } from "react";
 import apiClient from "../api/client";
-import { readStoredValue, writeStoredValue, removeStoredValue } from "../utils/storage.js";
 
 const AuthContext = createContext(null);
+const TOKEN_KEY = "token";
 
-function getUserFromToken(token) {
-    if (!token) return null;
-
+function isTokenValid(token) {
+    if (!token) return false;
     try {
-        const payload = JSON.parse(atob(token.split(".")[1]));
-
-        if (!payload.sub || !payload.username || !payload.role) {
-            return null;
-        }
-
-        if (payload.exp && payload.exp * 1000 < Date.now()) {
-            return null;
-        }
-
-        return {
-            id: Number(payload.sub),
-            username: payload.username,
-            role: payload.role,
-        };
+        const payload = JSON.parse(atob(token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/")));
+        return Boolean(payload.sub) && (!payload.exp || payload.exp * 1000 > Date.now());
     } catch {
-        return null;
+        return false;
     }
 }
 
 export function AuthProvider({ children }) {
-    const [token, setToken] = useState(() => localStorage.getItem("token"));
-    const [user, setUser] = useState(() =>
-        getUserFromToken(localStorage.getItem("token"))
-    );
+    const [token, setToken] = useState(() => localStorage.getItem(TOKEN_KEY));
+    const [user, setUser] = useState(null);
+    const [loading, setLoading] = useState(true);
+
+    const clearSession = useCallback(() => {
+        localStorage.removeItem(TOKEN_KEY);
+        setToken(null);
+        setUser(null);
+    }, []);
+
+    const reloadIdentity = useCallback(async (accessToken) => {
+        const bearer = accessToken ?? localStorage.getItem(TOKEN_KEY);
+        if (!bearer) throw new Error("Not authenticated");
+        const { data } = await apiClient.get("/auth/me", {
+            headers: { Authorization: `Bearer ${bearer}` },
+        });
+        setUser(data);
+        return data;
+    }, []);
 
     useEffect(() => {
-        if (!token) {
-            setUser(null);
-            return;
+        let cancelled = false;
+
+        async function restoreSession() {
+            setLoading(true);
+            try {
+                let accessToken = localStorage.getItem(TOKEN_KEY);
+                if (!isTokenValid(accessToken)) {
+                    const response = await apiClient.post("/auth/refresh");
+                    accessToken = response.data.access_token;
+                    localStorage.setItem(TOKEN_KEY, accessToken);
+                }
+                const { data } = await apiClient.get("/auth/me", {
+                    headers: { Authorization: `Bearer ${accessToken}` },
+                });
+                if (!cancelled) {
+                    setToken(accessToken);
+                    setUser(data);
+                }
+            } catch {
+                if (!cancelled) clearSession();
+            } finally {
+                if (!cancelled) setLoading(false);
+            }
         }
 
-        const currentUser = getUserFromToken(token);
-
-        if (!currentUser) {
-            localStorage.removeItem("token");
-            setToken(null);
-            setUser(null);
-            return;
-        }
-
-        setUser(currentUser);
-    }, [token]);
+        restoreSession();
+        return () => { cancelled = true; };
+    }, [clearSession]);
 
     const login = async (username, password) => {
         const formData = new URLSearchParams({ username, password });
-
-        const response = await apiClient.post(
-            "/auth/login",
-            formData.toString(),
-            {
-                headers: {
-                    "Content-Type": "application/x-www-form-urlencoded",
-                },
-            }
-        );
-
+        const response = await apiClient.post("/auth/login", formData.toString(), {
+            headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        });
         const accessToken = response.data.access_token;
-        const currentUser = getUserFromToken(accessToken);
+        if (!isTokenValid(accessToken)) throw new Error("Invalid authentication token.");
 
-        if (!currentUser) {
-            throw new Error("Invalid authentication token.");
+        localStorage.setItem(TOKEN_KEY, accessToken);
+        try {
+            await reloadIdentity(accessToken);
+            setToken(accessToken);
+        } catch (error) {
+            clearSession();
+            throw error;
         }
-
-        localStorage.setItem("token", accessToken);
-        setToken(accessToken);
-        setUser(currentUser);
-
         return response.data;
     };
 
-    const logout = () => {
-        localStorage.removeItem("token");
-        setToken(null);
-        setUser(null);
+    const logout = async () => {
+        try {
+            await apiClient.post("/auth/logout");
+        } finally {
+            clearSession();
+        }
     };
 
+    const permissions = user?.permissions ?? [];
+    const hasPermission = (permission) => permissions.includes(permission);
+
     return (
-        <AuthContext.Provider value={{ user, token, login, logout }}>
+        <AuthContext.Provider value={{
+            user, token, permissions, hasPermission,
+            loading, login, logout, reloadIdentity,
+        }}>
             {children}
         </AuthContext.Provider>
     );
 }
 
 export function useAuth() {
-    return useContext(AuthContext);
+    const context = useContext(AuthContext);
+    if (!context) throw new Error("useAuth must be used within AuthProvider");
+    return context;
 }
